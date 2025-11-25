@@ -1,0 +1,145 @@
+---
+title: "Homework 6"
+format:
+  html:
+    embed-resources: true
+editor: visual
+---
+
+Link to Github repository: https://github.com/grobertson881/stats506-homework6
+
+**Problem 1**
+
+```{r}
+library(Rcpp)
+
+cppFunction("
+double C_moment(NumericVector v, int k) {
+  double mean = 0;
+  for (int i = 0; i < v.length(); ++i){
+     mean += v[i];
+  }
+  mean = mean / v.length();
+  
+  double total = 0.0;
+  for (int i = 0; i < v.length(); ++i) {
+    total += pow(v[i] - mean, k);
+  }
+
+  return (total / v.length());
+}")
+
+# Test it works using e1071
+library(e1071)
+set.seed(1)
+x <- rnorm(20)
+
+C_moment(x, 3)
+moment(x, order = 3, center = TRUE)
+```
+
+**Problem 2**
+
+*Part A*
+
+```{r}
+
+
+```
+
+*Part B*
+
+```{r}
+
+
+```
+
+*Part C*
+
+```{r}
+
+
+```
+
+**Problem 3**
+
+*Part A*
+
+```{r}
+
+
+```
+
+*Part B*
+
+```{r}
+
+
+```
+
+**Problem 4**
+
+```{r}
+library(data.table)
+tennis <- fread("https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_2019.csv")
+```
+
+*Part A*
+
+```{r}
+tennis[, tourney_year := floor(tourney_date / 10000)]
+tennis[tourney_year == 2019, uniqueN(tourney_id)]
+```
+
+There were 125 tournaments played in 2019.
+
+*Part B*
+
+```{r}
+winners <- tennis[round == "F", .N, by = winner_name]
+
+winners[N > 1, .N]
+winners[, max(N)]
+winners[N == max(N)]
+```
+
+There are 12 players who have won more than 1 tournament. Novak Djokovic and Dominic Thiem are tied for the highest number of tournament wins with 5. 
+
+*Part C*
+
+```{r}
+library(broom)  
+
+tennis <- tennis[!is.na(w_ace) & !is.na(l_ace)]
+tennis[, win_more := w_ace > l_ace]          # create logical column
+n_win_more <- tennis[, sum(win_more)]        # number of matches winner had more aces
+n_total <- nrow(tennis)                      # total matches
+
+prop.test(n_win_more, n_total, p = 0.5)
+```
+
+There is evidence that winners have more aces because the p-value is so much smaller than 0.05.
+
+*Part D*
+
+```{r}
+wins <- tennis[, .N, by = winner_name]
+setnames(wins, c("winner_name", "wins"))
+
+matches_winner <- tennis[, .N, by = winner_name]
+matches_loser  <- tennis[, .N, by = loser_name]
+setnames(matches_winner, c("player", "matches_won"))
+setnames(matches_loser, c("player", "matches_lost"))
+
+matches <- merge(matches_winner, matches_loser, by = "player", all = TRUE)
+matches[is.na(matches)] <- 0
+matches[, total_matches := matches_won + matches_lost]
+
+matches[, win_rate := matches_won / total_matches]
+
+matches_filtered <- matches[total_matches >= 5]
+matches_filtered[order(-win_rate)]
+```
+
+The player with the highest win rate is Rafael Nadal with 86.96% of his games being wins. 
+
