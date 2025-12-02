@@ -211,16 +211,86 @@ Again, the parallel time decreases by about half. Overall the times are both muc
 *Part A*
 
 ```{r}
+library(fst)
+df <- read_fst("~/Desktop/stats506/problem3data.fst")
+```
 
+```{r}
+library(lme4)
+
+countries <- unique(df$country)
+
+results <- list()
+forum_coef <- numeric(length(countries))
+names(forum_coef) <- countries
+run_times <- numeric(length(countries))
+
+for (i in seq_along(countries)) {
+  cty <- countries[i]
+  
+  df_cty <- df[df$country == cty, ]
+  
+  df_cty$prior_gpa_std <- scale(df_cty$prior_gpa)
+  df_cty$forum_posts_std <- scale(df_cty$forum_posts)
+  df_cty$quiz_attempts_std <- scale(df_cty$quiz_attempts)
+  
+  t <- system.time({
+    fit <- glmer(completed_course ~ prior_gpa_std + forum_posts_std + 
+                   quiz_attempts_std + (1|device_type),
+                 data = df_cty, family = binomial)
+  })
+  
+  results[[cty]] <- fit
+  forum_coef[cty] <- fixef(fit)["forum_posts_std"]
+  run_times[cty] <- t["elapsed"]
+}
+
+barplot(forum_coef, main="Estimated Effect of Forum Posts by Country",
+        ylab="Coefficient (log-odds)", col="skyblue")
 
 ```
+
+The run time for each of the 6 models was: 27.03 for US, 43.53 for Other, 0.840 for India, 1.769 for Germany, 96.539 for Lithuania, and 56.872 for Nigeria.  
 
 *Part B*
 
 ```{r}
+library(lme4)
+library(parallel)
 
+countries <- unique(df$country)
+
+n_cores <- detectCores() - 1
+
+fit_country <- function(cty) {
+  df_cty <- df[df$country == cty, ]
+  
+  df_cty$prior_gpa_std <- scale(df_cty$prior_gpa)
+  df_cty$forum_posts_std <- scale(df_cty$forum_posts)
+  df_cty$quiz_attempts_std <- scale(df_cty$quiz_attempts)
+  
+  fit <- glmer(completed_course ~ prior_gpa_std + forum_posts_std + 
+                 quiz_attempts_std + (1|device_type),
+               data = df_cty, family = binomial)
+  coef <- fixef(fit)["forum_posts_std"]
+  return(list(fit = fit, forum_coef = coef))
+}
+
+t0 <- Sys.time()
+results_parallel <- mclapply(countries, fit_country, mc.cores = n_cores)
+t1 <- Sys.time()
+
+forum_coef_parallel <- sapply(results_parallel, function(x) x$forum_coef)
+names(forum_coef_parallel) <- countries
+run_time_parallel <- t1 - t0
+
+forum_coef
+forum_coef_parallel
+run_time_parallel
 
 ```
+
+The run time of the script can be shortened by running the models for each country in parallel instead of in sequence on different cores. The run time of this portion of the script is just above 2 minutes. Compared to the serial script that ran for over 5 minutes, this is much better. The coefficients of the two models are also almost exactly the same. 
 
 **Problem 4**
 
