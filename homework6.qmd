@@ -43,23 +43,168 @@ moment(x, order = 3, center = TRUE)
 *Part A*
 
 ```{r}
+source("waldCI.R")
 
+setClass("bootstrapWaldCI",
+  contains = "waldCI",
+  slots = c(
+    data = "data.frame",
+    func = "function",
+    reps = "numeric",
+    compute = "character"
+  )
+)
 
+setValidity("bootstrapWaldCI", function(object) {
+  if (!(object@compute %in% c("serial", "parallel"))) {
+    stop("compute must be 'serial' or 'parallel'")
+  }
+  if (object@reps <= 0) {
+    stop("reps must be positive")
+  }
+  TRUE
+})
+
+##' Create bootstrapWaldCI object
+##' @export
+makeBootstrapCI <- function(func, data, reps = 1000, level = 0.95, compute = "serial") {
+  stopifnot(is.function(func))
+  stopifnot(is.data.frame(data))
+
+  n <- nrow(data)
+  if (compute == "serial") {
+    boots <- numeric(reps)
+    for (i in seq_len(reps)) {
+      idx <- sample.int(n, replace = TRUE)
+      boots[i] <- func(data[idx, , drop = FALSE])
+    }
+  } else {
+    cores <- max(1, parallel::detectCores() - 1)
+    boots <- unlist(
+      parallel::mclapply(
+        seq_len(reps),
+        function(i) {
+          idx <- sample.int(n, replace = TRUE)
+          func(data[idx, , drop = FALSE])
+        },
+        mc.cores = cores
+      )
+    )
+  }
+
+  mean_hat  <- mean(boots)
+  sterr_hat <- sd(boots)
+
+  new("bootstrapWaldCI",
+      level = level,
+      mean = mean_hat,
+      sterr = sterr_hat,
+      data = data,
+      func = func,
+      reps = reps,
+      compute = compute)
+}
+
+setGeneric("rebootstrap", function(object) {
+  standardGeneric("rebootstrap")
+})
+
+setMethod("rebootstrap", "bootstrapWaldCI", function(object) {
+  data <- object@data
+  func <- object@func
+  reps <- object@reps
+  compute <- object@compute
+  n <- nrow(data)
+
+  if (compute == "serial") {
+    boots <- numeric(reps)
+    for (i in seq_len(reps)) {
+      idx <- sample.int(n, replace = TRUE)
+      boots[i] <- func(data[idx, , drop = FALSE])
+    }
+  } else {
+    cores <- max(1, parallel::detectCores() - 1)
+    boots <- unlist(
+      parallel::mclapply(
+        seq_len(reps),
+        function(i) {
+          idx <- sample.int(n, replace = TRUE)
+          func(data[idx, , drop = FALSE])
+        },
+        mc.cores = cores
+      )
+    )
+  }
+
+  mean_hat  <- mean(boots)
+  sterr_hat <- sd(boots)
+
+  new("bootstrapWaldCI",
+      level = object@level,
+      mean = mean_hat,
+      sterr = sterr_hat,
+      data = data,
+      func = func,
+      reps = reps,
+      compute = compute)
+})
 ```
 
 *Part B*
 
 ```{r}
+# show it works from homework
+ci1 <- makeBootstrapCI(function(x) mean(x$y),
+                       ggplot2::diamonds,
+                       reps = 1000)
+ci1
+rebootstrap(ci1)
 
+# compare compute methods
+ci1_serial_time <- system.time(
+    makeBootstrapCI(function(x) mean(x$y), ggplot2::diamonds,reps = 1000,compute = "serial")
+)
 
+ci1_parallel_time <- system.time(
+    makeBootstrapCI(function(x) mean(x$y), ggplot2::diamonds,reps = 1000,compute = "parallel")
+)
+
+ci1_serial_time
+ci1_parallel_time
 ```
+
+In parallel, the elapsed time decreases by about half because it is running multiple cores at the same time. It is a large dataset, so the elapsed time is still a few seconds in both cases. 
 
 *Part C*
 
 ```{r}
+dispCoef <- function(data) {
+  fit <- lm(mpg ~ cyl + disp + wt, data = data)
+  coef(fit)[["disp"]]
+}
 
+# show it works from homework
+ci2 <- makeBootstrapCI(dispCoef,
+                       mtcars,
+                       reps = 1000)
+ci2
+rebootstrap(ci2)
+
+# compare compute methods
+ci2_serial_time <- system.time(
+    makeBootstrapCI(dispCoef, mtcars,reps = 1000,compute = "serial")
+)
+
+ci2_parallel_time <- system.time(
+    makeBootstrapCI(dispCoef, mtcars,reps = 1000,compute = "parallel")
+)
+
+ci2_serial_time
+ci2_parallel_time
 
 ```
+
+Again, the parallel time decreases by about half. Overall the times are both much smaller because the mtcars dataset is much smaller than the dataset from part B. 
 
 **Problem 3**
 
